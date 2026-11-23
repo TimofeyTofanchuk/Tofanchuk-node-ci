@@ -37,3 +37,23 @@ jobs:
         with:
           name: build-artifact
           path: dist/
+
+      - name: 7. Decode SSH key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY_B64 }}" | base64 -d > ec2-key.pem || true
+          chmod 600 ec2-key.pem || true
+
+      - name: 8. Deploy to EC2
+        run: |
+          rsync -avz -e "ssh -i ec2-key.pem -o StrictHostKeyChecking=no" --exclude='.git' ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/nodeapp || true
+
+      - name: 9. Restart app on EC2
+        run: |
+          ssh -i ec2-key.pem -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF' || true
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+            sudo npm install -g pm2
+            cd /home/${{ secrets.EC2_USER }}/nodeapp
+            npm install
+            pm2 restart all || pm2 start index.js --name "my-app"
+          EOF
